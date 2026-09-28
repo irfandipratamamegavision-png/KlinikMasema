@@ -1660,7 +1660,7 @@
     </div>
 
     <h3 style="margin-top:16px;">💊 Resep Obat (opsional)</h3>
-    <p class="section-hint">Obat yang dipilih di sini akan otomatis muncul di keranjang tab Kasir untuk diproses pembayaran. Isi juga aturan pakai untuk keperluan cetak resep formal.</p>
+    <p class="section-hint">Pilih obat, lalu tentukan aturan pakai (signa dan waktu makan). Resep tersimpan dan bisa dicetak sebagai label obat atau resep formal.</p>
     <div class="search-box">
       <input type="text" id="rmeCariObat" placeholder="Cari nama / kode obat...">
     </div>
@@ -3752,6 +3752,9 @@ function tambahObatKeResepRme(obatId){
   else { rmeResepCart.push({ obatId:o.id, nama:o.nama, hargaJual:o.hargaJual, hargaBeli:o.hargaBeli, satuan:o.satuan, qty:1, aturan:'' }); }
   renderRmeResepList();
 }
+function rmeAturanOptions(arr, cur, ph){
+  return `<option value="">${ph}</option>` + arr.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v}</option>`).join('');
+}
 function renderRmeResepList(){
   const wrap = document.getElementById('rmeResepList');
   if(rmeResepCart.length===0){ wrap.innerHTML = `<p class="muted">Belum ada obat dipilih.</p>`; return; }
@@ -3764,7 +3767,10 @@ function renderRmeResepList(){
         <button type="button" class="rme-qty-plus" data-idx="${idx}">+</button>
       </div>
       <button class="ci-del rme-hapus-obat" data-idx="${idx}">✕</button>
-      <input type="text" class="rme-aturan-pakai" data-idx="${idx}" value="${escapeHtml(c.aturan||'')}" placeholder="Aturan pakai, mis. 3x1 sehari sesudah makan" style="flex-basis:100%;margin-top:6px;">
+      <div style="flex-basis:100%;display:flex;gap:6px;margin-top:6px;">
+        <select class="rme-aturan-sel" data-idx="${idx}" data-k="signa" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_SIGNA_OPTS, c.signa, '— Signa —')}</select>
+        <select class="rme-aturan-sel" data-idx="${idx}" data-k="makan" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_MAKAN_OPTS, c.makan, '— Waktu makan —')}</select>
+      </div>
     </div>`).join('');
   wrap.querySelectorAll('.rme-qty-minus').forEach(b=>b.addEventListener('click', e=>{
     const i = Number(e.target.dataset.idx);
@@ -3780,8 +3786,10 @@ function renderRmeResepList(){
     rmeResepCart.splice(Number(e.target.dataset.idx), 1);
     renderRmeResepList();
   }));
-  wrap.querySelectorAll('.rme-aturan-pakai').forEach(inp=>inp.addEventListener('input', e=>{
-    rmeResepCart[Number(e.target.dataset.idx)].aturan = e.target.value;
+  wrap.querySelectorAll('.rme-aturan-sel').forEach(sel=>sel.addEventListener('change', e=>{
+    const it = rmeResepCart[Number(e.target.dataset.idx)];
+    it[e.target.dataset.k] = e.target.value;
+    it.aturan = composeAturanLabel(it);
   }));
 }
 
@@ -4826,7 +4834,7 @@ function renderLabelAturanControls(){
   const opt = (arr, cur, ph)=> `<option value="">${ph}</option>` + arr.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v}</option>`).join('');
   document.getElementById('labelPreviewAturan').innerHTML = items.map((c,i)=>`
     <div style="margin-bottom:8px;">
-      <div style="font-size:12px;font-weight:700;margin-bottom:3px;">${escapeHtml(c.nama)}${c.aturan && c.aturan.trim() ? ` <span class="muted" style="font-weight:400;">(catatan dokter: ${escapeHtml(c.aturan.trim())})</span>` : ''}</div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:3px;">${escapeHtml(c.nama)}${c.aturan && c.aturan.trim() && !c.signa && !c.makan ? ` <span class="muted" style="font-weight:400;">(catatan dokter: ${escapeHtml(c.aturan.trim())})</span>` : ''}</div>
       <div style="display:flex;gap:6px;">
         <select data-idx="${i}" data-k="signa" style="${st}">${opt(LABEL_SIGNA_OPTS, aturanOv[i].signa, '— Signa —')}</select>
         <select data-idx="${i}" data-k="makan" style="${st}">${opt(LABEL_MAKAN_OPTS, aturanOv[i].makan, '— Waktu makan —')}</select>
@@ -4836,7 +4844,7 @@ function renderLabelAturanControls(){
 // Indikasi SELALU kosong di awal dan diisi manual; aturan pakai (signa + waktu makan) dipilih per obat.
 function previewCetakLabelObatItems(items, pasien, indikasi){
   if(!items || items.length===0){ toast('Belum ada obat untuk dicetak labelnya.', true); return; }
-  labelPreviewCtx = { items, pasien, aturanOv: items.map(()=>({ signa:'', makan:'' })) };
+  labelPreviewCtx = { items, pasien, aturanOv: items.map(c=>({ signa:c.signa||'', makan:c.makan||'' })) };
   document.getElementById('labelPreviewIndikasi').value = '';
   renderLabelAturanControls();
   document.getElementById('btnLabelAturanSamakan').style.display = items.length > 1 ? '' : 'none';
