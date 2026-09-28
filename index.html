@@ -406,6 +406,7 @@
     <button class="tab" data-tab="antrian">🎫 Antrian Klinik</button>
     <button class="tab" data-tab="laporanKlinik">📈 Laporan Klinik</button>
     <button class="tab" data-tab="cetak">🖨️ Cetak Dokumen</button>
+    <button class="tab" data-tab="stok">💊 Daftar Obat</button>
     <button class="tab" data-tab="pengaturan">⚙️ Pengaturan</button>
   </nav>
 </div>
@@ -5866,6 +5867,9 @@ function applyRoleUI(){
   if(kasirAreaBtn) kasirAreaBtn.style.display = currentUserRole==='dokter' ? 'none' : '';
   // Tab Laporan Keuangan & Pengaturan hanya untuk akun berperan Pemilik/Admin.
   const ownerOnlyBtns = document.querySelectorAll('.tab[data-tab="laporan"], .tab[data-tab="pengaturan"]');
+  document.querySelectorAll('#areaSubTabs-klinik .tab[data-tab="stok"]').forEach(btn=>{
+    btn.style.display = currentUserRole==='dokter' ? 'none' : '';
+  });
   ownerOnlyBtns.forEach(btn=>{
     btn.style.display = (currentUserRole==='kasir' || currentUserRole==='dokter') ? 'none' : '';
   });
@@ -7847,7 +7851,7 @@ document.getElementById('btnClearStokFilter').addEventListener('click', ()=>{
 });
 document.getElementById('btnGoPengaturanPin').addEventListener('click', ()=> goToTab('pengaturan'));
 
-const TAB_AREA = { beranda:'beranda', kasir:'kasir', riwayat:'kasir', riwayatPengeluaran:'kasir', stok:'kasir', resep:'kasir', piutang:'kasir', laporan:'kasir', pengaturan:'klinik', cetak:'klinik', pasien:'klinik', booking:'klinik', antrian:'klinik', laporanKlinik:'klinik' };
+const TAB_AREA = { beranda:'beranda', kasir:'kasir', riwayat:'kasir', riwayatPengeluaran:'kasir', stok:'klinik', resep:'kasir', piutang:'kasir', laporan:'kasir', pengaturan:'klinik', cetak:'klinik', pasien:'klinik', booking:'klinik', antrian:'klinik', laporanKlinik:'klinik' };
 
 function activateArea(area){
   document.querySelectorAll('.area-tab').forEach(b=>b.classList.toggle('active', b.dataset.area===area));
