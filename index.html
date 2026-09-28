@@ -649,7 +649,7 @@
       <h3 style="margin-top:6px;">Label Obat / Resep dari Resep Menunggu</h3>
       <div class="field">
         <label>Pilih Resep Menunggu</label>
-        <select id="kdPilihResepPending"><option value="">— Belum ada resep menunggu untuk pasien ini —</option></select>
+        <select id="kdPilihResepPending"><option value="">— Belum ada resep untuk pasien ini —</option></select>
       </div>
       <div class="toolbar" style="margin-bottom:12px;">
         <button class="btn" id="kdBtnCetakLabel" type="button">🏷️ Cetak Label Obat</button>
@@ -4126,9 +4126,9 @@ function populateKdResepPendingOptions(list){
     ? kdResepPendingList.filter(r=> r.pasienId === kdPasienSelected.id || r.namaPasien === kdPasienSelected.nama)
     : kdResepPendingList;
   if(filtered.length===0){
-    sel.innerHTML = '<option value="">— Belum ada resep menunggu untuk pasien ini —</option>';
+    sel.innerHTML = '<option value="">— Belum ada resep untuk pasien ini —</option>';
   } else {
-    sel.innerHTML = filtered.map(r=>`<option value="${r.id}">${escapeHtml(r.namaPasien)} — ${escapeHtml(r.dokter||'-')} — ${r.tanggal} ${r.waktu} (${r.items.length} obat)</option>`).join('');
+    sel.innerHTML = filtered.slice().sort((a,b)=>(b.tanggal+b.waktu).localeCompare(a.tanggal+a.waktu)).map(r=>{ const nm = r.items.map(i=>i.nama).join(', '); return `<option value="${r.id}">${r.tanggal} ${r.waktu} — ${escapeHtml(r.namaPasien)} — ${escapeHtml(r.dokter||'-')} (${escapeHtml(nm.length>70 ? nm.slice(0,70)+'…' : nm)})</option>`; }).join('');
   }
 }
 document.getElementById('kdCariPasien').addEventListener('input', e=>{
