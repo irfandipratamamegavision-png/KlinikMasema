@@ -650,10 +650,12 @@
       <div class="field">
         <label>Pilih Resep Menunggu</label>
         <select id="kdPilihResepPending"><option value="">— Belum ada resep untuk pasien ini —</option></select>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-top:6px;font-weight:400;"><input type="checkbox" id="kdTampilSudahSiap"> Tampilkan juga resep yang sudah disiapkan</label>
       </div>
       <div class="toolbar" style="margin-bottom:12px;">
         <button class="btn" id="kdBtnCetakLabel" type="button">🏷️ Cetak Label Obat</button>
         <button class="btn" id="kdBtnCetakResepFormal" type="button">🖨️ Cetak Resep Formal</button>
+        <button class="btn btn-primary" id="kdBtnSiap" type="button">✅ Sudah Disiapkan (kurangi stok)</button>
         <button class="btn btn-secondary" id="kdBtnCetakKalibrasi" type="button" title="Cetak 1 label uji untuk cek batas area cetak fisik printer">🧪 Tes Kalibrasi Label</button>
         <button class="btn btn-secondary" id="kdBtnCetakKalibrasi2" type="button" title="Cetak 1 label uji dengan 7 baris teks generik, meniru persis jumlah baris & ukuran font Label Obat asli - untuk uji apakah panjang/tinggi konten yang jadi penyebab gagal cetak">🧪 Tes Kalibrasi Label (7 Baris)</button>
       </div>
@@ -3330,17 +3332,29 @@ let antrianTanggalAktif = null;
 let antrianPasienTerpilih = null; // {id,nama,noRm}
 let antrianAwaitingNewPasien = false;
 
+let antrianSnapshot = {}; // id -> JSON entri saat dimuat/terakhir disimpan; dipakai untuk tahu entri mana yang benar-benar berubah
+function ambilSnapshotAntrian(){
+  antrianSnapshot = {};
+  antrianList.forEach(a=>{ antrianSnapshot[a.id] = JSON.stringify(a); });
+}
 async function loadAntrianHariIni(){
   const tanggal = dateKey(new Date());
   antrianTanggalAktif = tanggal;
   const raw = await sGet('antrian-log/' + tanggal);
   antrianList = raw ? Object.values(raw) : [];
+  ambilSnapshotAntrian();
 }
+// Hanya entri yang BERUBAH di komputer ini yang ditulis & dikirim ke cloud. Entri lain (yang mungkin
+// baru diubah dokter/admin di komputer lain) tidak ikut dikirim ulang, jadi statusnya tidak bisa "mundur".
 async function saveAntrianList(){
-  const obj = {};
-  antrianList.forEach(a=> obj[a.id] = a);
-  await sSet('antrian-log/' + antrianTanggalAktif, obj);
-  pushPathToCloud('antrian-log/' + antrianTanggalAktif); // kirim segera (digabung, bukan ditimpa) supaya cepat terlihat di komputer lain
+  const path = 'antrian-log/' + antrianTanggalAktif;
+  const berubah = antrianList.filter(a=> antrianSnapshot[a.id] !== JSON.stringify(a));
+  const idAda = new Set(antrianList.map(a=>a.id));
+  const dihapus = Object.keys(antrianSnapshot).filter(id=>!idAda.has(id));
+  for(const a of berubah){ await sSet(path + '/' + a.id, a); }
+  for(const id of dihapus){ await sDeletePath(path + '/' + id); }
+  berubah.forEach(a=> pushPathToCloud(path + '/' + a.id)); // kirim segera supaya cepat terlihat di komputer lain
+  ambilSnapshotAntrian();
 }
 
 function renderAntrianSummary(){
@@ -4137,14 +4151,62 @@ let kdResepPendingList = [];
 function populateKdResepPendingOptions(list){
   kdResepPendingList = list || [];
   const sel = document.getElementById('kdPilihResepPending');
-  const filtered = kdPasienSelected
+  let filtered = kdPasienSelected
     ? kdResepPendingList.filter(r=> r.pasienId === kdPasienSelected.id || r.namaPasien === kdPasienSelected.nama)
     : kdResepPendingList;
+  const cbSiap = document.getElementById('kdTampilSudahSiap');
+  if(!(cbSiap && cbSiap.checked)) filtered = filtered.filter(r=>!r.disiapkan);
   if(filtered.length===0){
     sel.innerHTML = '<option value="">— Belum ada resep untuk pasien ini —</option>';
   } else {
-    sel.innerHTML = filtered.slice().sort((a,b)=>(b.tanggal+b.waktu).localeCompare(a.tanggal+a.waktu)).map(r=>{ const nm = r.items.map(i=>i.nama).join(', '); return `<option value="${r.id}">${r.tanggal} ${r.waktu} — ${escapeHtml(r.namaPasien)} — ${escapeHtml(r.dokter||'-')} (${escapeHtml(nm.length>70 ? nm.slice(0,70)+'…' : nm)})</option>`; }).join('');
+    sel.innerHTML = filtered.slice().sort((a,b)=>(b.tanggal+b.waktu).localeCompare(a.tanggal+a.waktu)).map(r=>{ const nm = r.items.map(i=>i.nama).join(', '); return `<option value="${r.id}">${r.disiapkan ? '✓ ' : ''}${r.tanggal} ${r.waktu} — ${escapeHtml(r.namaPasien)} — ${escapeHtml(r.dokter||'-')} (${escapeHtml(nm.length>70 ? nm.slice(0,70)+'…' : nm)})</option>`; }).join('');
   }
+  updateKdBtnSiap();
+}
+function updateKdBtnSiap(){
+  const btn = document.getElementById('kdBtnSiap');
+  if(!btn) return;
+  const sel = document.getElementById('kdPilihResepPending');
+  const r = kdResepPendingList.find(x=>x.id===(sel ? sel.value : ''));
+  btn.textContent = (r && r.disiapkan) ? '↩ Batalkan Disiapkan (kembalikan stok)' : '✅ Sudah Disiapkan (kurangi stok)';
+}
+async function toggleResepDisiapkan(){
+  const id = document.getElementById('kdPilihResepPending').value;
+  const r = kdResepPendingList.find(x=>x.id===id);
+  if(!r){ toast('Pilih resep terlebih dahulu.', true); return; }
+  const balik = !!r.disiapkan;
+  const daftar = r.items.map(it=>`- ${it.nama}: ${it.qty}`).join('\n');
+  const judul = balik
+    ? 'Batalkan status "sudah disiapkan" dan KEMBALIKAN stok obat berikut?'
+    : 'Tandai resep ini sudah disiapkan dan KURANGI stok obat berikut?';
+  if(!confirm(judul + '\n\n' + daftar + '\n\nLanjutkan?')) return;
+  const catatan = [];
+  for(const it of r.items){
+    const o = obatList.find(x=>x.id===it.obatId);
+    if(!o){ catatan.push(`${it.nama}: tidak ada di Daftar Obat, stok tidak diubah`); continue; }
+    const qty = Number(it.qty)||0;
+    const stokSekarang = Number(o.stok||0);
+    if(balik){
+      o.stok = stokSekarang + (it.stokDikurangi != null ? Number(it.stokDikurangi) : qty);
+      delete it.stokDikurangi;
+    } else {
+      const dikurangi = Math.min(qty, Math.max(0, stokSekarang));
+      if(dikurangi < qty) catatan.push(`${it.nama}: stok ${stokSekarang}, diminta ${qty} (stok jadi 0)`);
+      o.stok = stokSekarang - dikurangi;
+      it.stokDikurangi = dikurangi;
+    }
+    await sSet('obat-list/' + o.id, o);
+    pushPathToCloud('obat-list/' + o.id);
+  }
+  const now = new Date();
+  r.disiapkan = !balik;
+  r.disiapkanOleh = balik ? '' : (currentKasirNama || '');
+  r.disiapkanWaktu = balik ? '' : `${dateKey(now)} ${timeStr(now)}`;
+  await sSet('resep-pending/' + r.id, r);
+  pushPathToCloud('resep-pending/' + r.id);
+  await renderResepPendingBanner();
+  toast(balik ? 'Status disiapkan dibatalkan, stok dikembalikan ✓' : 'Resep ditandai sudah disiapkan, stok dikurangi ✓');
+  if(catatan.length) alert('Perhatian:\n' + catatan.join('\n'));
 }
 document.getElementById('kdCariPasien').addEventListener('input', e=>{
   const q = e.target.value.trim().toLowerCase();
@@ -4186,6 +4248,9 @@ document.getElementById('kdBtnCetakResepFormal').addEventListener('click', ()=>{
   const p = pasienList.find(x=>x.id===r.pasienId) || { nama: r.namaPasien };
   cetakResepFormal(p, r.dokter, r.items);
 });
+document.getElementById('kdBtnSiap').addEventListener('click', toggleResepDisiapkan);
+document.getElementById('kdPilihResepPending').addEventListener('change', updateKdBtnSiap);
+document.getElementById('kdTampilSudahSiap').addEventListener('change', ()=>populateKdResepPendingOptions(kdResepPendingList));
 document.getElementById('kdBtnCetakKalibrasi').addEventListener('click', ()=>{
   cetakLabelKalibrasi();
 });
@@ -5297,10 +5362,13 @@ async function renderBeranda(){
   const menunggu = antrianList.filter(a=>a.status==='Menunggu').length;
   const diperiksa = antrianList.filter(a=>a.status==='Diperiksa').length;
   const selesai = antrianList.filter(a=>a.status==='Selesai').length;
+  const rpRaw = await sGet('resep-pending');
+  const resepBelum = rpRaw ? Object.values(rpRaw).filter(r=>!r.disiapkan).length : 0;
   wrap.innerHTML = [
     `<div class="s-card" style="cursor:pointer;" onclick="goToTab('antrian')"><div class="k">Antrian Menunggu</div><div class="v">${menunggu}</div></div>`,
     `<div class="s-card" style="cursor:pointer;" onclick="goToTab('antrian')"><div class="k">Sedang Diperiksa</div><div class="v">${diperiksa}</div></div>`,
     `<div class="s-card" style="cursor:pointer;" onclick="goToTab('antrian')"><div class="k">Selesai Hari Ini</div><div class="v">${selesai}</div></div>`,
+    `<div class="s-card" style="cursor:pointer;" onclick="goToTab('cetak')"><div class="k">Resep Belum Disiapkan</div><div class="v">${resepBelum}</div></div>`,
     `<div class="s-card" style="cursor:pointer;" onclick="goToTab('pasien')"><div class="k">Total Pasien Terdaftar</div><div class="v">${pasienList.length}</div></div>`,
   ].join('');
 }
