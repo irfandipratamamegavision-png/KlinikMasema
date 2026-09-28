@@ -1788,14 +1788,10 @@
   <div class="modal" style="max-width:420px;">
     <h3>🏷️ Pratinjau Label Obat</h3>
     <p class="section-hint">Ukuran di bawah ini mendekati ukuran fisik sebenarnya, supaya bisa dicek dulu sebelum benar-benar dicetak. <span id="labelPreviewCount"></span></p>
-    <div class="field" style="margin-bottom:10px;">
-      <label>Indikasi pada label (isi manual, boleh dikosongkan)</label>
-      <input type="text" id="labelPreviewIndikasi" placeholder="Contoh: demam, batuk pilek, nyeri">
-    </div>
     <div style="margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <label style="font-size:12px;font-weight:600;">Aturan pakai per obat</label>
-        <button class="btn btn-sm" id="btnLabelAturanSamakan" type="button">Samakan semua dgn obat pertama</button>
+        <label style="font-size:12px;font-weight:600;">Aturan pakai &amp; indikasi per obat</label>
+        <button class="btn btn-sm" id="btnLabelAturanSamakan" type="button">Samakan signa &amp; waktu makan</button>
       </div>
       <div id="labelPreviewAturan" style="max-height:26vh;overflow-y:auto;"></div>
     </div>
@@ -3771,6 +3767,7 @@ function renderRmeResepList(){
         <select class="rme-aturan-sel" data-idx="${idx}" data-k="signa" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_SIGNA_OPTS, c.signa, '— Signa —')}</select>
         <select class="rme-aturan-sel" data-idx="${idx}" data-k="makan" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_MAKAN_OPTS, c.makan, '— Waktu makan —')}</select>
       </div>
+      <input type="text" class="rme-indikasi" data-idx="${idx}" value="${escapeHtml(c.indikasi||'')}" placeholder="Indikasi / untuk apa obat ini, mis. nyeri, demam, maag" style="flex-basis:100%;margin-top:6px;">
     </div>`).join('');
   wrap.querySelectorAll('.rme-qty-minus').forEach(b=>b.addEventListener('click', e=>{
     const i = Number(e.target.dataset.idx);
@@ -3785,6 +3782,9 @@ function renderRmeResepList(){
   wrap.querySelectorAll('.rme-hapus-obat').forEach(b=>b.addEventListener('click', e=>{
     rmeResepCart.splice(Number(e.target.dataset.idx), 1);
     renderRmeResepList();
+  }));
+  wrap.querySelectorAll('.rme-indikasi').forEach(inp=>inp.addEventListener('input', e=>{
+    rmeResepCart[Number(e.target.dataset.idx)].indikasi = e.target.value;
   }));
   wrap.querySelectorAll('.rme-aturan-sel').forEach(sel=>sel.addEventListener('change', e=>{
     const it = rmeResepCart[Number(e.target.dataset.idx)];
@@ -4717,6 +4717,7 @@ function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
     const expD = obatMaster && obatMaster.kadaluarsa ? parseDateInput(obatMaster.kadaluarsa) : null;
     const exp = expD && !isNaN(expD) ? fmtDateFull(expD) : '';
     const aturanManual = aturanOv ? composeAturanLabel(aturanOv[idx]) : '';
+    const indikasiItem = (aturanOv ? (aturanOv[idx].indikasi||'') : (indikasiText || c.indikasi || '')).trim();
     const aturanText = aturanManual || ((c.aturan && c.aturan.trim()) ? c.aturan.trim() : '-');
     // UJI COBA (TAHAP 2): markup ditulis meniru PERSIS pola label KALIBRASI yang terbukti
     // selalu berhasil cetak fisik sempurna - div polos + inline style saja, TIDAK ada
@@ -4731,7 +4732,7 @@ function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
       <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(aturanText)}</div>
       <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(c.nama)}</div>
       <div style="font-size:15px;text-align:center;">JUMLAH OBAT : ${c.qty} ${escapeHtml(c.satuan||'')}</div>
-      ${indikasiText ? `<div style="font-size:12px;text-align:center;word-break:break-word;">INDIKASI : ${escapeHtml(indikasiText.toUpperCase())}</div>` : ''}
+      ${indikasiItem ? `<div style="font-size:12px;text-align:center;word-break:break-word;">INDIKASI : ${escapeHtml(indikasiItem.toUpperCase())}</div>` : ''}
     </div>
   `;
   });
@@ -4822,8 +4823,7 @@ function composeAturanLabel(ov){
 function refreshLabelPreview(){
   if(!labelPreviewCtx) return;
   const { items, pasien, aturanOv } = labelPreviewCtx;
-  const indikasi = document.getElementById('labelPreviewIndikasi').value;
-  const { htmlArr, mm, hmm } = buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv);
+  const { htmlArr, mm, hmm } = buildLabelObatHtmlArr(items, pasien, '', aturanOv);
   labelPreviewPending = { htmlArr, mm, hmm };
   document.getElementById('labelPreviewBoxes').innerHTML = htmlArr.map(h=>`<div class="label-preview-box" style="width:${mm}mm;height:${hmm}mm;">${h}</div>`).join('');
   document.getElementById('labelPreviewCount').textContent = `${items.length} label · ukuran ${mm}mm × ${hmm}mm`;
@@ -4839,19 +4839,24 @@ function renderLabelAturanControls(){
         <select data-idx="${i}" data-k="signa" style="${st}">${opt(LABEL_SIGNA_OPTS, aturanOv[i].signa, '— Signa —')}</select>
         <select data-idx="${i}" data-k="makan" style="${st}">${opt(LABEL_MAKAN_OPTS, aturanOv[i].makan, '— Waktu makan —')}</select>
       </div>
+      <input type="text" data-idx="${i}" data-k="indikasi" value="${escapeHtml(aturanOv[i].indikasi||'')}" placeholder="Indikasi, mis. nyeri, demam (boleh kosong)" style="width:100%;margin-top:6px;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;box-sizing:border-box;">
     </div>`).join('');
 }
 // Indikasi SELALU kosong di awal dan diisi manual; aturan pakai (signa + waktu makan) dipilih per obat.
 function previewCetakLabelObatItems(items, pasien, indikasi){
   if(!items || items.length===0){ toast('Belum ada obat untuk dicetak labelnya.', true); return; }
-  labelPreviewCtx = { items, pasien, aturanOv: items.map(c=>({ signa:c.signa||'', makan:c.makan||'' })) };
-  document.getElementById('labelPreviewIndikasi').value = '';
+  labelPreviewCtx = { items, pasien, aturanOv: items.map(c=>({ signa:c.signa||'', makan:c.makan||'', indikasi:c.indikasi||'' })) };
   renderLabelAturanControls();
   document.getElementById('btnLabelAturanSamakan').style.display = items.length > 1 ? '' : 'none';
   refreshLabelPreview();
   document.getElementById('labelPreviewModal').classList.remove('hidden');
 }
-document.getElementById('labelPreviewIndikasi').addEventListener('input', refreshLabelPreview);
+document.getElementById('labelPreviewAturan').addEventListener('input', (e)=>{
+  const t = e.target;
+  if(!labelPreviewCtx || !t.dataset || t.dataset.k !== 'indikasi') return;
+  labelPreviewCtx.aturanOv[Number(t.dataset.idx)].indikasi = t.value;
+  refreshLabelPreview();
+});
 document.getElementById('labelPreviewAturan').addEventListener('change', (e)=>{
   const t = e.target;
   if(!labelPreviewCtx || !t.dataset || t.dataset.k === undefined) return;
@@ -4861,7 +4866,7 @@ document.getElementById('labelPreviewAturan').addEventListener('change', (e)=>{
 document.getElementById('btnLabelAturanSamakan').addEventListener('click', ()=>{
   if(!labelPreviewCtx) return;
   const first = labelPreviewCtx.aturanOv[0];
-  labelPreviewCtx.aturanOv = labelPreviewCtx.items.map(()=>({ signa:first.signa, makan:first.makan }));
+  labelPreviewCtx.aturanOv = labelPreviewCtx.items.map((_, i)=>({ signa:first.signa, makan:first.makan, indikasi:(labelPreviewCtx.aturanOv[i]||{}).indikasi||'' }));
   renderLabelAturanControls();
   refreshLabelPreview();
 });
