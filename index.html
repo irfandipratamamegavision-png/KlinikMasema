@@ -1789,8 +1789,15 @@
     <h3>🏷️ Pratinjau Label Obat</h3>
     <p class="section-hint">Ukuran di bawah ini mendekati ukuran fisik sebenarnya, supaya bisa dicek dulu sebelum benar-benar dicetak. <span id="labelPreviewCount"></span></p>
     <div class="field" style="margin-bottom:10px;">
-      <label>Indikasi pada label (bisa diubah bebas)</label>
-      <input type="text" id="labelPreviewIndikasi" placeholder="Contoh: demam, batuk pilek, dsb.">
+      <label>Indikasi pada label (isi manual, boleh dikosongkan)</label>
+      <input type="text" id="labelPreviewIndikasi" placeholder="Contoh: demam, batuk pilek, nyeri">
+    </div>
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <label style="font-size:12px;font-weight:600;">Aturan pakai per obat</label>
+        <button class="btn btn-sm" id="btnLabelAturanSamakan" type="button">Samakan semua dgn obat pertama</button>
+      </div>
+      <div id="labelPreviewAturan" style="max-height:26vh;overflow-y:auto;"></div>
     </div>
     <div style="background:#e8e8e8;border:1px solid var(--border);border-radius:10px;padding:14px;max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;align-items:center;gap:10px;">
       <div id="labelPreviewBoxes" style="display:flex;flex-direction:column;align-items:center;gap:10px;"></div>
@@ -4687,7 +4694,7 @@ function getLabelWidthMm(){
 function getLabelHeightMm(){
   return Number(pengaturan.labelHeight) > 0 ? Number(pengaturan.labelHeight) : 40;
 }
-function buildLabelObatHtmlArr(items, pasien, indikasi){
+function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
   const p = (typeof pasien === 'string') ? { nama: pasien, tglLahir: '' } : (pasien || { nama:'', tglLahir:'' });
   const namaPasien = p.nama || '';
   const usia = p.tglLahir ? calcUmurDetail(p.tglLahir) : '';
@@ -4697,11 +4704,12 @@ function buildLabelObatHtmlArr(items, pasien, indikasi){
   const logoTampil = false; // TEMP: dimatikan sementara untuk uji apakah <img> logo penyebab gagal cetak fisik
   const logoOpacity = (pengaturan.logoOpacityLabel != null ? pengaturan.logoOpacityLabel : 100) / 100;
   const logoHtml = logoTampil ? `<img class="lo-logo" src="${getLogoSrc()}" alt="" style="opacity:${logoOpacity};">` : '';
-  const htmlArr = items.map(c=>{
+  const htmlArr = items.map((c, idx)=>{
     const obatMaster = c.obatId ? obatList.find(o=>o.id===c.obatId) : null;
     const expD = obatMaster && obatMaster.kadaluarsa ? parseDateInput(obatMaster.kadaluarsa) : null;
     const exp = expD && !isNaN(expD) ? fmtDateFull(expD) : '';
-    const aturanText = (c.aturan && c.aturan.trim()) ? c.aturan.trim() : '-';
+    const aturanManual = aturanOv ? composeAturanLabel(aturanOv[idx]) : '';
+    const aturanText = aturanManual || ((c.aturan && c.aturan.trim()) ? c.aturan.trim() : '-');
     // UJI COBA (TAHAP 2): markup ditulis meniru PERSIS pola label KALIBRASI yang terbukti
     // selalu berhasil cetak fisik sempurna - div polos + inline style saja, TIDAK ada
     // <table>, TIDAK ada class CSS terpisah (.lo-header/.lo-aturan2/.lo-obat2/.lo-row).
@@ -4715,7 +4723,7 @@ function buildLabelObatHtmlArr(items, pasien, indikasi){
       <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(aturanText)}</div>
       <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(c.nama)}</div>
       <div style="font-size:15px;text-align:center;">JUMLAH OBAT : ${c.qty} ${escapeHtml(c.satuan||'')}</div>
-      <div style="font-size:12px;text-align:center;word-break:break-word;">INDIKASI : ${escapeHtml(indikasiText.toUpperCase())}</div>
+      ${indikasiText ? `<div style="font-size:12px;text-align:center;word-break:break-word;">INDIKASI : ${escapeHtml(indikasiText.toUpperCase())}</div>` : ''}
     </div>
   `;
   });
@@ -4794,26 +4802,60 @@ function cetakLabelKalibrasi2(){
 // sebelum buang-buang kertas/waktu untuk trial-and-error di printer.
 let labelPreviewPending = null;
 let labelPreviewCtx = null;
+const LABEL_SIGNA_OPTS = ['1x1','2x1','3x1','4x1','Bila perlu'];
+const LABEL_MAKAN_OPTS = ['Sebelum makan','Sesudah makan','Saat makan'];
+function composeAturanLabel(ov){
+  if(!ov) return '';
+  const parts = [];
+  if(ov.signa) parts.push(ov.signa);
+  if(ov.makan) parts.push(ov.makan.toUpperCase());
+  return parts.join(' · ');
+}
+function refreshLabelPreview(){
+  if(!labelPreviewCtx) return;
+  const { items, pasien, aturanOv } = labelPreviewCtx;
+  const indikasi = document.getElementById('labelPreviewIndikasi').value;
+  const { htmlArr, mm, hmm } = buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv);
+  labelPreviewPending = { htmlArr, mm, hmm };
+  document.getElementById('labelPreviewBoxes').innerHTML = htmlArr.map(h=>`<div class="label-preview-box" style="width:${mm}mm;height:${hmm}mm;">${h}</div>`).join('');
+  document.getElementById('labelPreviewCount').textContent = `${items.length} label · ukuran ${mm}mm × ${hmm}mm`;
+}
+function renderLabelAturanControls(){
+  const { items, aturanOv } = labelPreviewCtx;
+  const st = 'flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;';
+  const opt = (arr, cur, ph)=> `<option value="">${ph}</option>` + arr.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v}</option>`).join('');
+  document.getElementById('labelPreviewAturan').innerHTML = items.map((c,i)=>`
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:3px;">${escapeHtml(c.nama)}${c.aturan && c.aturan.trim() ? ` <span class="muted" style="font-weight:400;">(catatan dokter: ${escapeHtml(c.aturan.trim())})</span>` : ''}</div>
+      <div style="display:flex;gap:6px;">
+        <select data-idx="${i}" data-k="signa" style="${st}">${opt(LABEL_SIGNA_OPTS, aturanOv[i].signa, '— Signa —')}</select>
+        <select data-idx="${i}" data-k="makan" style="${st}">${opt(LABEL_MAKAN_OPTS, aturanOv[i].makan, '— Waktu makan —')}</select>
+      </div>
+    </div>`).join('');
+}
+// Indikasi SELALU kosong di awal dan diisi manual; aturan pakai (signa + waktu makan) dipilih per obat.
 function previewCetakLabelObatItems(items, pasien, indikasi){
   if(!items || items.length===0){ toast('Belum ada obat untuk dicetak labelnya.', true); return; }
-  labelPreviewCtx = { items, pasien }; // disimpan supaya bisa render ulang saat indikasi diedit manual oleh dokter
-  const { htmlArr, mm, hmm } = buildLabelObatHtmlArr(items, pasien, indikasi);
-  labelPreviewPending = { htmlArr, mm, hmm };
-  const wrap = document.getElementById('labelPreviewBoxes');
-  wrap.innerHTML = htmlArr.map(h=>`<div class="label-preview-box" style="width:${mm}mm;height:${hmm}mm;">${h}</div>`).join('');
-  document.getElementById('labelPreviewCount').textContent = `${items.length} label · ukuran ${mm}mm × ${hmm}mm`;
-  document.getElementById('labelPreviewIndikasi').value = indikasi || '';
+  labelPreviewCtx = { items, pasien, aturanOv: items.map(()=>({ signa:'', makan:'' })) };
+  document.getElementById('labelPreviewIndikasi').value = '';
+  renderLabelAturanControls();
+  document.getElementById('btnLabelAturanSamakan').style.display = items.length > 1 ? '' : 'none';
+  refreshLabelPreview();
   document.getElementById('labelPreviewModal').classList.remove('hidden');
 }
-// Saat dokter/user mengetik ulang indikasi di kolom pratinjau, label langsung dirender ulang
-// dengan teks indikasi custom itu (menggantikan diagnosa otomatis dari RME/riwayat).
-document.getElementById('labelPreviewIndikasi').addEventListener('input', (e)=>{
+document.getElementById('labelPreviewIndikasi').addEventListener('input', refreshLabelPreview);
+document.getElementById('labelPreviewAturan').addEventListener('change', (e)=>{
+  const t = e.target;
+  if(!labelPreviewCtx || !t.dataset || t.dataset.k === undefined) return;
+  labelPreviewCtx.aturanOv[Number(t.dataset.idx)][t.dataset.k] = t.value;
+  refreshLabelPreview();
+});
+document.getElementById('btnLabelAturanSamakan').addEventListener('click', ()=>{
   if(!labelPreviewCtx) return;
-  const { items, pasien } = labelPreviewCtx;
-  const { htmlArr, mm, hmm } = buildLabelObatHtmlArr(items, pasien, e.target.value);
-  labelPreviewPending = { htmlArr, mm, hmm };
-  const wrap = document.getElementById('labelPreviewBoxes');
-  wrap.innerHTML = htmlArr.map(h=>`<div class="label-preview-box" style="width:${mm}mm;height:${hmm}mm;">${h}</div>`).join('');
+  const first = labelPreviewCtx.aturanOv[0];
+  labelPreviewCtx.aturanOv = labelPreviewCtx.items.map(()=>({ signa:first.signa, makan:first.makan }));
+  renderLabelAturanControls();
+  refreshLabelPreview();
 });
 document.getElementById('btnLabelPreviewCetak').addEventListener('click', ()=>{
   if(!labelPreviewPending) return;
