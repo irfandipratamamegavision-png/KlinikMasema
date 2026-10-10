@@ -335,7 +335,7 @@
   .label-obat .lo-obat2{font-weight:700;font-size:17px;margin:4px 0;line-height:1.2;}
   .label-obat .lo-row{font-size:15px;margin:3px 0;line-height:1.25;word-break:break-word;}
   .label-preview-box{background:#fff;border:1.5px solid #999;box-shadow:0 2px 6px rgba(0,0,0,.15);box-sizing:border-box;flex:none;overflow:hidden;}
-  .label-preview-box .label-obat{width:100%;height:100%;page-break-after:auto;}
+  .label-preview-box .label-obat{width:100% !important;height:100%;page-break-after:auto;}
   .wiz-size-btn{border:1.5px solid var(--border);border-radius:10px;padding:12px 8px;background:var(--surface);cursor:pointer;font-size:13px;font-weight:700;color:var(--ink);text-align:center;transition:.15s;}
   .wiz-size-btn small{font-weight:500;color:var(--ink-soft);}
   .wiz-size-btn:hover{border-color:var(--primary);}
@@ -4843,7 +4843,11 @@ function getLabelHeightMm(){
 // muat 1 baris dalam area aman cetak (tidak kepotong di kiri/kanan). Kalau sudah
 // mencapai ukuran minimum tapi masih terlalu panjang, teks turun ke baris berikutnya
 // (word-break) sehingga tetap tidak kepotong.
-const LABEL_SAFE_WIDTH_PX = 250;
+// Lebar kotak label mengikuti ukuran label di Pengaturan (bukan lagi 300px tetap):
+// 300px (~79mm) lebih lebar dari label fisik 60mm (~227px), akibatnya teks yang rata
+// tengah bergeser & kepotong di satu sisi.
+function getLabelBoxPx(){ return Math.max(120, Math.floor(getLabelWidthMm()*96/25.4) - 8); }
+function getLabelSafeWidthPx(){ return Math.max(90, getLabelBoxPx() - 16 - 12); }
 function fitLabelFontPx(parts, basePx, minPx){
   // parts: [{text, bold, scale}] - scale = rasio ukuran thd font utama (default 1)
   try{
@@ -4855,12 +4859,12 @@ function fitLabelFontPx(parts, basePx, minPx){
       total += c.measureText(pt.text||'').width * (pt.scale||1);
     });
     if(!total) return basePx;
-    const fit = Math.floor((LABEL_SAFE_WIDTH_PX / total) * 100);
+    const fit = Math.floor((getLabelSafeWidthPx() / total) * 100);
     return Math.max(minPx, Math.min(basePx, fit));
   }catch(e){
     // cadangan: perkiraan kasar lebar karakter monospace = 0.62 x font
     const n = parts.reduce((a,pt)=>a+((pt.text||'').length*(pt.scale||1)),0) || 1;
-    return Math.max(minPx, Math.min(basePx, Math.floor(LABEL_SAFE_WIDTH_PX/(n*0.62))));
+    return Math.max(minPx, Math.min(basePx, Math.floor(getLabelSafeWidthPx()/(n*0.62))));
   }
 }
 function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
@@ -4896,7 +4900,7 @@ function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
     const indTxt = indikasiItem ? 'INDIKASI : ' + indikasiItem.toUpperCase() : '';
     const fInd = fitLabelFontPx([{text:indTxt,bold:false}], 12, 9);
     return `
-    <div class="label-obat">
+    <div class="label-obat" style="width:${getLabelBoxPx()}px;">
       ${logoHtml}
       <div style="font-size:${fNama}px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(namaPasien)}<span style="font-weight:400;font-size:${fUsia}px;">${escapeHtml(usiaTxt)}</span></div>
       <div style="font-size:${fAturan}px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(aturanText)}</div>
