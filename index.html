@@ -4854,9 +4854,9 @@ function getLabelBoxPx(){ return Math.max(120, Math.floor(getLabelWidthMm()*96/2
 // Geser horizontal: sebagian printer/driver tidak mencetak di sisi kiri halaman (area itu
 // "hilang" sebelum mencapai label fisik). Offset (mm) menggeser seluruh isi label ke kanan
 // supaya teks jatuh di area yang benar-benar tercetak. Bisa di-tune di Pratinjau Label.
-function getLabelOffsetMm(){ const v = Number(pengaturan.labelOffsetMm); return isFinite(v) && v >= 0 ? v : 15; }
+function getLabelOffsetMm(){ const v = Number(pengaturan.labelOffsetMm); return isFinite(v) && v >= 0 ? v : 19; }
 function getLabelOffsetPx(){ return Math.round(getLabelOffsetMm()*96/25.4); }
-function getLabelSafeWidthPx(){ return Math.max(90, getLabelBoxPx() - 16 - 12); }
+function getLabelSafeWidthPx(){ return Math.max(90, getLabelBoxPx() - 16 - 28); }
 function fitLabelFontPx(parts, basePx, minPx){
   // parts: [{text, bold, scale}] - scale = rasio ukuran thd font utama (default 1)
   try{
