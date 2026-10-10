@@ -4839,6 +4839,30 @@ function getLabelWidthMm(){
 function getLabelHeightMm(){
   return Number(pengaturan.labelHeight) > 0 ? Number(pengaturan.labelHeight) : 40;
 }
+// Auto-ukuran font label: kecilkan font otomatis kalau teks terlalu panjang supaya
+// muat 1 baris dalam area aman cetak (tidak kepotong di kiri/kanan). Kalau sudah
+// mencapai ukuran minimum tapi masih terlalu panjang, teks turun ke baris berikutnya
+// (word-break) sehingga tetap tidak kepotong.
+const LABEL_SAFE_WIDTH_PX = 250;
+function fitLabelFontPx(parts, basePx, minPx){
+  // parts: [{text, bold, scale}] - scale = rasio ukuran thd font utama (default 1)
+  try{
+    const c = fitLabelFontPx._c || (fitLabelFontPx._c = document.createElement('canvas').getContext('2d'));
+    let fam = (getComputedStyle(document.documentElement).getPropertyValue('--font-mono')||'').trim() || 'monospace';
+    let total = 0;
+    parts.forEach(pt=>{
+      c.font = (pt.bold?'700 ':'400 ') + '100px ' + fam;
+      total += c.measureText(pt.text||'').width * (pt.scale||1);
+    });
+    if(!total) return basePx;
+    const fit = Math.floor((LABEL_SAFE_WIDTH_PX / total) * 100);
+    return Math.max(minPx, Math.min(basePx, fit));
+  }catch(e){
+    // cadangan: perkiraan kasar lebar karakter monospace = 0.62 x font
+    const n = parts.reduce((a,pt)=>a+((pt.text||'').length*(pt.scale||1)),0) || 1;
+    return Math.max(minPx, Math.min(basePx, Math.floor(LABEL_SAFE_WIDTH_PX/(n*0.62))));
+  }
+}
 function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
   const p = (typeof pasien === 'string') ? { nama: pasien, tglLahir: '' } : (pasien || { nama:'', tglLahir:'' });
   const namaPasien = p.nama || '';
@@ -4862,14 +4886,23 @@ function buildLabelObatHtmlArr(items, pasien, indikasi, aturanOv){
     // Tujuannya isolasi: apakah strukturnya (table/class/margin/line-height/word-break)
     // yang bikin gagal, bukan datanya. Kalau versi ini BERHASIL, baru kita tahu persis
     // elemen mana yang harus dihindari dan pelan-pelan tambahkan kembali.
+    const usiaTxt = usia ? ' · ' + usia : '';
+    const fNama = fitLabelFontPx([{text:namaPasien,bold:true},{text:usiaTxt,bold:false,scale:11/12}], 12, 9);
+    const fUsia = Math.max(8, Math.round(fNama*11/12));
+    const fAturan = fitLabelFontPx([{text:aturanText,bold:true}], 17, 10);
+    const fObat = fitLabelFontPx([{text:c.nama||'',bold:true}], 17, 10);
+    const jmlTxt = 'JUMLAH OBAT : ' + c.qty + ' ' + (c.satuan||'');
+    const fJml = fitLabelFontPx([{text:jmlTxt,bold:false}], 15, 10);
+    const indTxt = indikasiItem ? 'INDIKASI : ' + indikasiItem.toUpperCase() : '';
+    const fInd = fitLabelFontPx([{text:indTxt,bold:false}], 12, 9);
     return `
     <div class="label-obat">
       ${logoHtml}
-      <div style="font-size:12px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(namaPasien)}<span style="font-weight:400;font-size:11px;"> · ${escapeHtml(usia)}</span></div>
-      <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(aturanText)}</div>
-      <div style="font-size:17px;font-weight:700;text-align:center;">${escapeHtml(c.nama)}</div>
-      <div style="font-size:15px;text-align:center;">JUMLAH OBAT : ${c.qty} ${escapeHtml(c.satuan||'')}</div>
-      ${indikasiItem ? `<div style="font-size:12px;text-align:center;word-break:break-word;">INDIKASI : ${escapeHtml(indikasiItem.toUpperCase())}</div>` : ''}
+      <div style="font-size:${fNama}px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(namaPasien)}<span style="font-weight:400;font-size:${fUsia}px;">${escapeHtml(usiaTxt)}</span></div>
+      <div style="font-size:${fAturan}px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(aturanText)}</div>
+      <div style="font-size:${fObat}px;font-weight:700;text-align:center;word-break:break-word;">${escapeHtml(c.nama)}</div>
+      <div style="font-size:${fJml}px;text-align:center;word-break:break-word;">${escapeHtml(jmlTxt)}</div>
+      ${indikasiItem ? `<div style="font-size:${fInd}px;text-align:center;word-break:break-word;">${escapeHtml(indTxt)}</div>` : ''}
     </div>
   `;
   });
