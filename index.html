@@ -147,6 +147,13 @@
   td.num,th.num{text-align:right;font-family:var(--font-mono);}
   tfoot td{padding:10px 12px;font-weight:800;border-top:2px solid var(--border);font-family:var(--font-mono);}
   .muted{color:var(--ink-soft);font-size:12.5px;}
+  .pasien-link{color:var(--primary);font-weight:700;text-decoration:none;border-bottom:1px dashed var(--primary-light);cursor:pointer;}
+  .pasien-link:hover{color:var(--primary-dark);border-bottom-style:solid;}
+  .pasien-link:focus-visible{outline:2px solid var(--primary-light);outline-offset:2px;border-radius:3px;}
+  .rm-head{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-bottom:10px;}
+  .rm-head b{font-weight:700;}
+  .rm-count{font-size:13px;margin:0 0 12px;color:var(--ink-soft);}
+  .rm-obat{margin-top:4px;padding:6px 10px;border-radius:8px;background:rgba(14,156,192,.08);font-size:12.5px;}
   .row-low{background:var(--danger-soft) !important;}
   .row-low:hover{background:var(--danger-soft) !important;}
   .tag{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.01em;}
@@ -3015,6 +3022,27 @@ async function logRestock(entries){
 /* =========================================================
    TAB PASIEN
    ========================================================= */
+/* ---- Nama pasien yang bisa diklik -> buka riwayat berobat ---- */
+function resolvePasienId(pasienId, nama){
+  if(pasienId) return pasienId;
+  const n = (nama||'').trim().toLowerCase();
+  if(!n) return null;
+  const cocok = pasienList.filter(x=> (x.nama||'').trim().toLowerCase() === n);
+  return cocok.length === 1 ? cocok[0].id : null; // kalau nama kembar, tidak ditebak
+}
+function pasienLink(nama, pasienId){
+  const label = escapeHtml(nama || '-');
+  const id = resolvePasienId(pasienId, nama);
+  if(!id) return label;
+  return `<a href="#" class="pasien-link" data-pasien-id="${escapeHtml(id)}" title="Klik untuk melihat riwayat berobat">${label}</a>`;
+}
+document.addEventListener('click', e=>{
+  const a = e.target.closest ? e.target.closest('.pasien-link') : null;
+  if(!a) return;
+  e.preventDefault();
+  openRiwayatRmModal(a.dataset.pasienId);
+});
+
 function renderPasienSummary(){
   const wrap = document.getElementById('pasienSummaryCards');
   if(!wrap) return;
@@ -3037,7 +3065,7 @@ function renderPasienTable(){
   body.innerHTML = list.map(p=>`
     <tr data-id="${p.id}">
       <td>${escapeHtml(p.noRm||'-')}</td>
-      <td>${escapeHtml(p.nama)}</td>
+      <td>${pasienLink(p.nama, p.id)}</td>
       <td>${p.tglLahir||'-'} ${p.tglLahir ? `<span class="muted">(${calcUmur(p.tglLahir)})</span>` : ''}</td>
       <td>${p.jk||'-'}</td>
       <td>${escapeHtml(p.hp||'-')}</td>
@@ -3466,7 +3494,7 @@ function renderAntrianTable(){
   body.innerHTML = list.map(a=>`
     <tr data-id="${a.id}">
       <td>${a.noAntrian}</td>
-      <td>${escapeHtml(a.namaPasien)}</td>
+      <td>${pasienLink(a.namaPasien, a.pasienId)}</td>
       <td>${escapeHtml(a.keluhan||'-')}</td>
       <td>${a.waktuDaftar||'-'}</td>
       <td>${statusTag(a.status)}</td>
@@ -3643,7 +3671,7 @@ function buildBookingRows(rows){
     <tr>
       <td>${fmtDateFull(parseDateInput(b.tanggal))}</td>
       <td>${b.jam||'-'}</td>
-      <td>${escapeHtml(b.namaPasien)}</td>
+      <td>${pasienLink(b.namaPasien, b.pasienId)}</td>
       <td>${escapeHtml(b.keluhan||'-')}</td>
       <td>${statusTag}</td>
       <td>
@@ -3761,7 +3789,7 @@ function openRmeModal(antrian){
   rmeResepCart = [];
   const p = pasienList.find(x=>x.id===antrian.pasienId);
   document.getElementById('rmeInfoPasien').innerHTML =
-    `<span>🩺 Pasien: <strong>${escapeHtml(antrian.namaPasien)}</strong> — No. Antrian ${antrian.noAntrian}</span>`;
+    `<span>🩺 Pasien: <strong>${pasienLink(antrian.namaPasien, antrian.pasienId)}</strong> — No. Antrian ${antrian.noAntrian}</span>`;
   document.getElementById('rmeTensi').value = '';
   document.getElementById('rmeSuhu').value = '';
   document.getElementById('rmeNadi').value = '';
@@ -3909,6 +3937,7 @@ async function simpanRme(){
     tglKontrolBerikutnya: document.getElementById('rmeTglKontrol').value || '',
     dokter: currentKasirNama || 'Dokter',
     adaResep: rmeResepCart.length > 0,
+    resep: rmeResepCart.map(c=>({ nama: c.nama, qty: c.qty, satuan: c.satuan||'', aturan: c.aturan||'' })),
   };
   const existing = await sGet('rme-log/' + entry.pasienId) || {};
   existing[entry.id] = entry;
@@ -3950,20 +3979,39 @@ async function simpanRme(){
   toast(rmeResepCart.length>0 ? 'Rekam medis & resep tersimpan — resep menunggu diproses di tab Kasir ✓' : 'Rekam medis tersimpan & pasien ditandai selesai ✓');
 }
 
-async function openRiwayatRmModal(pasienId){
-  const p = pasienList.find(x=>x.id===pasienId);
-  document.getElementById('riwayatRmTitle').textContent = `Riwayat Rekam Medis — ${p ? p.nama : ''}`;
+let riwayatRmToken = 0;
+async function openRiwayatRmModal(pasienId, namaFallback){
+  const id = resolvePasienId(pasienId, namaFallback);
+  if(!id){ toast('Data pasien tidak ditemukan.', true); return; }
+  const token = ++riwayatRmToken;
+  const p = pasienList.find(x=>x.id===id);
+  const nama = p ? p.nama : (namaFallback || '');
+  document.getElementById('riwayatRmTitle').textContent = `Riwayat Berobat — ${nama}`;
   const wrap = document.getElementById('riwayatRmList');
   wrap.innerHTML = `<p class="muted">Memuat riwayat...</p>`;
   document.getElementById('riwayatRmModal').classList.remove('hidden');
 
-  const raw = await sGet('rme-log/' + pasienId);
-  const list = raw ? Object.values(raw).sort((a,b)=> (b.tanggal+b.waktu).localeCompare(a.tanggal+a.waktu)) : [];
+  const raw = await sGet('rme-log/' + id);
+  if(token !== riwayatRmToken) return; // modal sudah dibuka untuk pasien lain
+  const list = raw ? Object.values(raw).sort((a,b)=> ((b.tanggal||'')+(b.waktu||'')).localeCompare((a.tanggal||'')+(a.waktu||''))) : [];
+
+  const tglFmt = t => /^\d{4}-\d{2}-\d{2}$/.test(t||'') ? fmtDateFull(parseDateInput(t)) : (t||'-');
+  const head = p ? `
+    <div class="rm-head">
+      <span><b>No. RM:</b> ${escapeHtml(p.noRm||'-')}</span>
+      ${p.tglLahir ? `<span><b>Umur:</b> ${calcUmur(p.tglLahir)}</span>` : ''}
+      ${p.jk ? `<span><b>JK:</b> ${escapeHtml(p.jk)}</span>` : ''}
+      ${p.hp ? `<span><b>HP:</b> ${escapeHtml(p.hp)}</span>` : ''}
+      ${p.alergi ? `<span><b>Alergi:</b> <span class="tag tag-soon">${escapeHtml(p.alergi)}</span></span>` : ''}
+    </div>` : '';
+
   if(list.length===0){
-    wrap.innerHTML = `<div class="empty-state">Belum ada riwayat pemeriksaan untuk pasien ini.</div>`;
+    wrap.innerHTML = head + `<div class="empty-state">Belum ada riwayat pemeriksaan untuk pasien ini.</div>`;
     return;
   }
-  wrap.innerHTML = list.map(r=>{
+  const countLine = `<p class="rm-count">${list.length} kunjungan tercatat · terakhir ${tglFmt(list[0].tanggal)}</p>`;
+
+  wrap.innerHTML = head + countLine + list.map(r=>{
     const v = r.vital || {};
     const vitalParts = [];
     if(v.tensi) vitalParts.push(`TD ${v.tensi}`);
@@ -3971,11 +4019,13 @@ async function openRiwayatRmModal(pasienId){
     if(v.nadi) vitalParts.push(`Nadi ${v.nadi}x/mnt`);
     if(v.beratBadan) vitalParts.push(`BB ${v.beratBadan}kg`);
     if(v.tinggiBadan) vitalParts.push(`TB ${v.tinggiBadan}cm`);
+    const obat = Array.isArray(r.resep) ? r.resep : [];
+    const obatText = obat.map(o=> `${o.nama||''}${o.qty ? ' ×'+o.qty : ''}${o.aturan ? ' ('+o.aturan+')' : ''}`);
     return `
     <div class="card" style="margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-        <strong>${r.tanggal} ${r.waktu}</strong>
-        <span class="muted">Oleh: ${escapeHtml(r.dokter||'-')}</span>
+        <strong>${tglFmt(r.tanggal)}${r.waktu ? ' · '+escapeHtml(r.waktu) : ''}</strong>
+        <span class="muted">${r.sumberImpor ? '<span class="tag tag-soon">Riwayat lama</span> ' : ''}Oleh: ${escapeHtml(r.dokter||'-')}</span>
       </div>
       <div style="margin-top:6px;font-size:13px;">
         ${vitalParts.length ? `<div><span class="muted">Vital:</span> ${vitalParts.map(escapeHtml).join(' · ')}</div>` : ''}
@@ -3983,7 +4033,9 @@ async function openRiwayatRmModal(pasienId){
         ${r.keluhan ? `<div><span class="muted">Keluhan:</span> ${escapeHtml(r.keluhan)}</div>` : ''}
         <div><span class="muted">Diagnosa:</span> ${escapeHtml(r.diagnosa||'-')}</div>
         ${r.tindakan ? `<div><span class="muted">Tindakan:</span> ${escapeHtml(r.tindakan)}</div>` : ''}
+        ${obatText.length ? `<div class="rm-obat"><span class="muted">💊 Obat:</span> ${obatText.map(escapeHtml).join('; ')}</div>` : (r.adaResep ? `<div class="muted" style="margin-top:4px;">💊 Ada resep (rincian obat tidak tersimpan di data lama)</div>` : '')}
         ${r.catatan ? `<div><span class="muted">Catatan:</span> ${escapeHtml(r.catatan)}</div>` : ''}
+        ${r.tglKontrolBerikutnya ? `<div><span class="muted">Kontrol ulang:</span> ${tglFmt(r.tglKontrolBerikutnya)}</div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -4107,7 +4159,7 @@ async function renderLaporanKlinik(){
       return `<tr>
         <td>${fmtDateFull(parseDateInput(k.tanggal))}</td>
         <td>${k.noAntrian||'-'}</td>
-        <td>${escapeHtml(k.namaPasien||'-')}</td>
+        <td>${pasienLink(k.namaPasien, k.pasienId)}</td>
         <td>${escapeHtml(k.keluhan||'-')}</td>
         <td>${escapeHtml(rme ? (rme.diagnosa||'-') : '-')}</td>
         <td>${escapeHtml(rme ? (rme.dokter||'-') : '-')}</td>
@@ -5886,7 +5938,7 @@ async function renderResep(){
       <td>${fmtDateFull(parseDateInput(r.tanggal))}</td>
       <td>${r.noStruk}</td>
       <td>${escapeHtml(r.dokter)}</td>
-      <td>${escapeHtml(r.pasien||'-')}</td>
+      <td>${pasienLink(r.pasien, null)}</td>
       <td>${(r.items||[]).map(it=>escapeHtml(it.nama)+' ('+it.qty+')').join(', ')}</td>
       <td class="num">${rupiah(r.total)}</td>
     </tr>
