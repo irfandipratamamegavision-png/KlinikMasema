@@ -3866,6 +3866,14 @@ function tambahObatKeResepRme(obatId){
   else { rmeResepCart.push({ obatId:o.id, nama:o.nama, hargaJual:o.hargaJual, hargaBeli:o.hargaBeli, satuan:o.satuan, qty:1, aturan:'' }); }
   renderRmeResepList();
 }
+const SIGNA_CUSTOM_VAL = '__custom__';
+function signaIsCustom(c){ return !!c.signaCustom || (!!c.signa && !LABEL_SIGNA_OPTS.includes(c.signa)); }
+function signaOptionsHtml(c, ph){
+  const custom = signaIsCustom(c);
+  return `<option value="">${ph}</option>`
+    + LABEL_SIGNA_OPTS.map(v=>`<option value="${escapeHtml(v)}"${(!custom && v===c.signa)?' selected':''}>${escapeHtml(v)}</option>`).join('')
+    + `<option value="${SIGNA_CUSTOM_VAL}"${custom?' selected':''}>✏️ Custom (isi manual)</option>`;
+}
 function rmeAturanOptions(arr, cur, ph){
   return `<option value="">${ph}</option>` + arr.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v}</option>`).join('');
 }
@@ -3881,9 +3889,10 @@ function renderRmeResepList(){
         <button type="button" class="rme-qty-plus" data-idx="${idx}">+</button>
       </div>
       <button class="ci-del rme-hapus-obat" data-idx="${idx}">✕</button>
-      <div style="flex-basis:100%;display:flex;gap:6px;margin-top:6px;">
-        <select class="rme-aturan-sel" data-idx="${idx}" data-k="signa" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_SIGNA_OPTS, c.signa, '— Signa —')}</select>
+      <div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+        <select class="rme-aturan-sel" data-idx="${idx}" data-k="signa" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${signaOptionsHtml(c, '— Signa —')}</select>
         <select class="rme-aturan-sel" data-idx="${idx}" data-k="makan" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;">${rmeAturanOptions(LABEL_MAKAN_OPTS, c.makan, '— Waktu makan —')}</select>
+        ${signaIsCustom(c) ? `<input type="text" class="rme-signa-custom" data-idx="${idx}" value="${escapeHtml(c.signa||'')}" placeholder="Ketik signa, mis. 3 x ½ tablet" style="flex-basis:100%;padding:8px;border:1px solid var(--primary-light);border-radius:8px;font:inherit;background:#fff;box-sizing:border-box;">` : ''}
       </div>
       <input type="text" class="rme-indikasi" data-idx="${idx}" value="${escapeHtml(c.indikasi||'')}" placeholder="Indikasi / untuk apa obat ini, mis. nyeri, demam, maag" style="flex-basis:100%;margin-top:6px;">
     </div>`).join('');
@@ -3905,8 +3914,26 @@ function renderRmeResepList(){
     rmeResepCart[Number(e.target.dataset.idx)].indikasi = e.target.value;
   }));
   wrap.querySelectorAll('.rme-aturan-sel').forEach(sel=>sel.addEventListener('change', e=>{
-    const it = rmeResepCart[Number(e.target.dataset.idx)];
+    const idx = Number(e.target.dataset.idx);
+    const it = rmeResepCart[idx];
+    if(e.target.dataset.k === 'signa'){
+      if(e.target.value === SIGNA_CUSTOM_VAL){
+        it.signaCustom = true;
+        if(LABEL_SIGNA_OPTS.includes(it.signa)) it.signa = ''; // mulai kosong, dokter mengetik sendiri
+        it.aturan = composeAturanLabel(it);
+        renderRmeResepList();
+        const box = document.querySelector(`.rme-signa-custom[data-idx="${idx}"]`);
+        if(box) box.focus();
+        return;
+      }
+      it.signaCustom = false;
+    }
     it[e.target.dataset.k] = e.target.value;
+    it.aturan = composeAturanLabel(it);
+  }));
+  wrap.querySelectorAll('.rme-signa-custom').forEach(inp=>inp.addEventListener('input', e=>{
+    const it = rmeResepCart[Number(e.target.dataset.idx)];
+    it.signa = e.target.value;
     it.aturan = composeAturanLabel(it);
   }));
 }
@@ -5051,7 +5078,7 @@ const LABEL_MAKAN_OPTS = ['Sebelum makan','Sesudah makan','Saat makan'];
 function composeAturanLabel(ov){
   if(!ov) return '';
   const parts = [];
-  if(ov.signa) parts.push(ov.signa);
+  if(ov.signa && String(ov.signa).trim()) parts.push(String(ov.signa).trim());
   if(ov.makan) parts.push(ov.makan.toUpperCase());
   return parts.join(' · ');
 }
@@ -5071,16 +5098,17 @@ function renderLabelAturanControls(){
     <div style="margin-bottom:8px;">
       <div style="font-size:12px;font-weight:700;margin-bottom:3px;">${escapeHtml(c.nama)}${c.aturan && c.aturan.trim() && !c.signa && !c.makan ? ` <span class="muted" style="font-weight:400;">(catatan dokter: ${escapeHtml(c.aturan.trim())})</span>` : ''}</div>
       <div style="display:flex;gap:6px;">
-        <select data-idx="${i}" data-k="signa" style="${st}">${opt(LABEL_SIGNA_OPTS, aturanOv[i].signa, '— Signa —')}</select>
+        <select data-idx="${i}" data-k="signa" style="${st}">${signaOptionsHtml(aturanOv[i], '— Signa —')}</select>
         <select data-idx="${i}" data-k="makan" style="${st}">${opt(LABEL_MAKAN_OPTS, aturanOv[i].makan, '— Waktu makan —')}</select>
       </div>
+      ${signaIsCustom(aturanOv[i]) ? `<input type="text" data-idx="${i}" data-k="signaText" value="${escapeHtml(aturanOv[i].signa||'')}" placeholder="Ketik signa, mis. 3 x ½ tablet" style="width:100%;margin-top:6px;padding:8px;border:1px solid var(--primary-light);border-radius:8px;font:inherit;background:#fff;box-sizing:border-box;">` : ''}
       <input type="text" data-idx="${i}" data-k="indikasi" value="${escapeHtml(aturanOv[i].indikasi||'')}" placeholder="Indikasi, mis. nyeri, demam (boleh kosong)" style="width:100%;margin-top:6px;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;background:#fff;box-sizing:border-box;">
     </div>`).join('');
 }
 // Indikasi SELALU kosong di awal dan diisi manual; aturan pakai (signa + waktu makan) dipilih per obat.
 function previewCetakLabelObatItems(items, pasien, indikasi){
   if(!items || items.length===0){ toast('Belum ada obat untuk dicetak labelnya.', true); return; }
-  labelPreviewCtx = { items, pasien, aturanOv: items.map(c=>({ signa:c.signa||'', makan:c.makan||'', indikasi:c.indikasi||'' })) };
+  labelPreviewCtx = { items, pasien, aturanOv: items.map(c=>({ signa:c.signa||'', signaCustom: signaIsCustom(c), makan:c.makan||'', indikasi:c.indikasi||'' })) };
   renderLabelAturanControls();
   document.getElementById('labelOffsetInput').value = getLabelOffsetMm();
   document.getElementById('btnLabelAturanSamakan').style.display = items.length > 1 ? '' : 'none';
@@ -5089,14 +5117,33 @@ function previewCetakLabelObatItems(items, pasien, indikasi){
 }
 document.getElementById('labelPreviewAturan').addEventListener('input', (e)=>{
   const t = e.target;
-  if(!labelPreviewCtx || !t.dataset || t.dataset.k !== 'indikasi') return;
-  labelPreviewCtx.aturanOv[Number(t.dataset.idx)].indikasi = t.value;
-  refreshLabelPreview();
+  if(!labelPreviewCtx || !t.dataset) return;
+  if(t.dataset.k === 'indikasi'){
+    labelPreviewCtx.aturanOv[Number(t.dataset.idx)].indikasi = t.value;
+    refreshLabelPreview();
+  } else if(t.dataset.k === 'signaText'){
+    labelPreviewCtx.aturanOv[Number(t.dataset.idx)].signa = t.value;
+    refreshLabelPreview();
+  }
 });
 document.getElementById('labelPreviewAturan').addEventListener('change', (e)=>{
   const t = e.target;
-  if(!labelPreviewCtx || !t.dataset || t.dataset.k === undefined) return;
-  labelPreviewCtx.aturanOv[Number(t.dataset.idx)][t.dataset.k] = t.value;
+  if(!labelPreviewCtx || !t.dataset || t.dataset.k === undefined || t.dataset.k === 'signaText') return;
+  const idx = Number(t.dataset.idx);
+  const ov = labelPreviewCtx.aturanOv[idx];
+  if(t.dataset.k === 'signa'){
+    if(t.value === SIGNA_CUSTOM_VAL){
+      ov.signaCustom = true;
+      if(LABEL_SIGNA_OPTS.includes(ov.signa)) ov.signa = '';
+      renderLabelAturanControls();
+      refreshLabelPreview();
+      const box = document.querySelector(`#labelPreviewAturan input[data-k="signaText"][data-idx="${idx}"]`);
+      if(box) box.focus();
+      return;
+    }
+    ov.signaCustom = false;
+  }
+  ov[t.dataset.k] = t.value;
   refreshLabelPreview();
 });
 document.getElementById('labelOffsetInput').addEventListener('change', async (e)=>{
@@ -5111,7 +5158,7 @@ document.getElementById('labelOffsetInput').addEventListener('change', async (e)
 document.getElementById('btnLabelAturanSamakan').addEventListener('click', ()=>{
   if(!labelPreviewCtx) return;
   const first = labelPreviewCtx.aturanOv[0];
-  labelPreviewCtx.aturanOv = labelPreviewCtx.items.map((_, i)=>({ signa:first.signa, makan:first.makan, indikasi:(labelPreviewCtx.aturanOv[i]||{}).indikasi||'' }));
+  labelPreviewCtx.aturanOv = labelPreviewCtx.items.map((_, i)=>({ signa:first.signa, signaCustom:first.signaCustom, makan:first.makan, indikasi:(labelPreviewCtx.aturanOv[i]||{}).indikasi||'' }));
   renderLabelAturanControls();
   refreshLabelPreview();
 });
